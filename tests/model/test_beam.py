@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import pickle
 
 import pytest
 
@@ -290,6 +291,88 @@ def test_polychromatic_beam_wavelength_guards():
         beam.set_s0((0.0, 0.0, 0.1))
 
 
+def test_polychromatic_beam_peak_wavelength():
+    # Falls back to the wavelength range midpoint when not explicitly set,
+    # for backwards compatibility with beams that predate this attribute.
+    beam = PolychromaticBeam()
+    beam.set_wavelength_range((0.97, 1.15))
+    assert not beam.has_peak_wavelength()
+    assert beam.get_peak_wavelength() == pytest.approx(1.06)
+
+    beam.set_peak_wavelength(1.04)
+    assert beam.has_peak_wavelength()
+    assert beam.get_peak_wavelength() == pytest.approx(1.04)
+
+    # Explicit peak wavelength survives to_dict/from_dict...
+    d = beam.to_dict()
+    assert d["peak_wavelength"] == pytest.approx(1.04)
+    beam2 = BeamFactory.from_dict(d)
+    assert beam2.has_peak_wavelength()
+    assert beam2.get_peak_wavelength() == pytest.approx(1.04)
+
+    # ...and pickling.
+    beam3 = pickle.loads(pickle.dumps(beam))
+    assert beam3.has_peak_wavelength()
+    assert beam3.get_peak_wavelength() == pytest.approx(1.04)
+
+    # An older dict/pickle without a peak_wavelength key is unaffected: no
+    # key is written, and reading one back without it falls back cleanly.
+    beam_no_peak = PolychromaticBeam()
+    beam_no_peak.set_wavelength_range((0.97, 1.15))
+    d_no_peak = beam_no_peak.to_dict()
+    assert "peak_wavelength" not in d_no_peak
+    beam4 = BeamFactory.from_dict(d_no_peak)
+    assert not beam4.has_peak_wavelength()
+    assert beam4.get_peak_wavelength() == pytest.approx(1.06)
+
+    beam5 = pickle.loads(pickle.dumps(beam_no_peak))
+    assert not beam5.has_peak_wavelength()
+    assert beam5.get_peak_wavelength() == pytest.approx(1.06)
+
+    # peak_wavelength is descriptive metadata, not part of beam geometry, so
+    # it is deliberately excluded from equality comparisons.
+    beam6 = PolychromaticBeam()
+    beam6.set_wavelength_range((0.97, 1.15))
+    beam6.set_peak_wavelength(1.09)
+    assert beam_no_peak == beam6
+
+
+def test_make_polychromatic_beam_peak_wavelength():
+    beam = BeamFactory.make_polychromatic_beam(
+        direction=(0.0, 0.0, 1.0),
+        wavelength_range=(0.97, 1.15),
+        peak_wavelength=1.04,
+    )
+    assert beam.has_peak_wavelength()
+    assert beam.get_peak_wavelength() == pytest.approx(1.04)
+
+    # peak_wavelength is optional; omitting it preserves the old behaviour.
+    beam_no_peak = BeamFactory.make_polychromatic_beam(
+        direction=(0.0, 0.0, 1.0), wavelength_range=(0.97, 1.15)
+    )
+    assert not beam_no_peak.has_peak_wavelength()
+    assert beam_no_peak.get_peak_wavelength() == pytest.approx(1.06)
+
+
+def test_polychromatic_beam_peak_wavelength_from_phil():
+    params = beam_phil_scope.fetch(
+        parse(
+            """
+    beam {
+      type = polychromatic
+      direction = (0., 0., 1.)
+      wavelength_range = (0.97, 1.15)
+      peak_wavelength = 1.04
+    }
+    """
+        )
+    ).extract()
+
+    beam = BeamFactory.from_phil(params)
+    assert beam.has_peak_wavelength()
+    assert beam.get_peak_wavelength() == pytest.approx(1.04)
+
+
 def test_polychromatic_beam_comparison():
     beam1 = PolychromaticBeam()
     beam1.set_wavelength_range((0.0, 1.0))
@@ -329,7 +412,7 @@ def test_polychromatic_beam_str():
     beam = PolychromaticBeam()
     assert (
         beam.__str__()
-        == "Beam:\n    probe: x-ray\n    sample to source direction : {0,0,1}\n    divergence: 0\n    sigma divergence: 0\n    polarization normal: {0,1,0}\n    polarization fraction: 0.5\n    flux: 0\n    transmission: 1\n    sample to source distance : 0\n    wavelength range : {0,0}\n"
+        == "Beam:\n    probe: x-ray\n    sample to source direction : {0,0,1}\n    divergence: 0\n    sigma divergence: 0\n    polarization normal: {0,1,0}\n    polarization fraction: 0.5\n    flux: 0\n    transmission: 1\n    sample to source distance : 0\n    wavelength range : {0,0}\n    peak wavelength : 0 (derived from range midpoint)\n"
     )
 
 

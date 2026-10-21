@@ -14,6 +14,7 @@ from scitbx.array_family import flex
 
 import dxtbx.model
 from dxtbx import flumpy
+from dxtbx.model.beam import BeamFactory, Probe
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,72 @@ KNOWN_SENSOR_MATERIALS = {
 #   https://manual.nexusformat.org/design.html#design-coordinatesystem
 #   https://www.iucr.org/__data/iucr/cifdic_html/2/cif_img.dic/Caxis.html
 MCSTAS_TO_IMGCIF = np.diag([-1, 1, -1])
+
+
+class CachedPolychromaticBeamFactory:
+    """Beam factory that produces a PolychromaticBeam from an NXbeam whose
+    incident_wavelength encodes a wavelength range (Laue / broad-spectrum).
+
+    The probe type is read from /entry/source/probe in the file if present,
+    defaulting to xray.
+    """
+
+    def __init__(self, nxbeam: nxmx.NXbeam):
+        self._handle = nxbeam._handle
+        self._root_handle = nxbeam._handle.file
+        self.model: dxtbx.model.PolychromaticBeam | None = None
+
+    def _get_probe(self) -> Probe:
+        try:
+            probe_str = self._root_handle["/entry/source/probe"][()].decode()
+            return dxtbx.model.Beam.get_probe_from_name(probe_str)
+        except (KeyError, AttributeError):
+            return Probe.xray
+
+    def _read_peak_wavelength(self) -> float | None:
+        """The NXbeam ``peak_wavelength``, in angstroms, or None if absent."""
+        peak_wavelength = self._handle.get("peak_wavelength")
+        if peak_wavelength is None:
+            return None
+        peak_wavelength_units = nxmx.units(peak_wavelength)
+        return float(
+            (peak_wavelength[()] * peak_wavelength_units).to("angstrom").magnitude
+        )
+
+    def make_beam(self, index: int = 0) -> dxtbx.model.PolychromaticBeam:
+        if self.model is not None:
+            return self.model
+        wavelength = self._handle["incident_wavelength"]
+        wavelength_units = nxmx.units(wavelength)
+        wl_array = np.atleast_1d(
+            (wavelength[()] * wavelength_units).to("angstrom").magnitude
+        )
+        wavelength_range = (float(wl_array.min()), float(wl_array.max()))
+        self.model = BeamFactory.make_polychromatic_beam(
+            direction=(0, 0, 1),
+            wavelength_range=wavelength_range,
+            probe=self._get_probe(),
+            peak_wavelength=self._read_peak_wavelength(),
+        )
+        return self.model
+
+    def make_spectrum(self, index: int = 0) -> None:
+        return None
+
+    def get_representative_wavelength(self) -> float:
+        """A single representative wavelength, for use where one is required
+        (e.g. parallax correction in detector construction).
+
+        Preferentially this is the NXbeam ``peak_wavelength`` (the wavelength
+        of maximum intensity in the incident spectrum), since polychromatic
+        spectra are not generally symmetric about the midpoint of their
+        wavelength range. Falls back to the midpoint of the wavelength range
+        if ``peak_wavelength`` is not present in the file.
+        """
+        return self.make_beam().get_peak_wavelength()
+
+    # Deprecated alias, kept for backwards compatibility.
+    get_wavelength_midpoint = get_representative_wavelength
 
 
 def get_dxtbx_goniometer(nxsample: nxmx.NXsample) -> dxtbx.model.Goniometer | None:

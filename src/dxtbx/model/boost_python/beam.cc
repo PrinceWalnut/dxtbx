@@ -301,7 +301,14 @@ namespace dxtbx { namespace model { namespace boost_python {
     static boost::python::tuple getstate(boost::python::object obj) {
       const PolychromaticBeam &beam =
         boost::python::extract<const PolychromaticBeam &>(obj)();
-      return boost::python::make_tuple(obj.attr("__dict__"));
+      boost::python::dict d =
+        boost::python::extract<boost::python::dict>(obj.attr("__dict__"))();
+      // peak_wavelength_ is a C++-side member, not part of the Python
+      // __dict__, so it must be stashed explicitly to survive pickling.
+      if (beam.has_peak_wavelength()) {
+        d["peak_wavelength"] = beam.get_peak_wavelength();
+      }
+      return boost::python::make_tuple(d);
     }
 
     static void setstate(boost::python::object obj, boost::python::tuple state) {
@@ -310,6 +317,9 @@ namespace dxtbx { namespace model { namespace boost_python {
       boost::python::dict d =
         boost::python::extract<boost::python::dict>(obj.attr("__dict__"))();
       d.update(state[0]);
+      if (d.has_key("peak_wavelength")) {
+        beam.set_peak_wavelength(boost::python::extract<double>(d["peak_wavelength"]));
+      }
     }
   };
 
@@ -398,6 +408,9 @@ namespace dxtbx { namespace model { namespace boost_python {
     result["probe"] = obj.get_probe_name();
     result["sample_to_source_distance"] = obj.get_sample_to_source_distance();
     result["wavelength_range"] = obj.get_wavelength_range();
+    if (obj.has_peak_wavelength()) {
+      result["peak_wavelength"] = obj.get_peak_wavelength();
+    }
     return result;
   }
 
@@ -417,6 +430,9 @@ namespace dxtbx { namespace model { namespace boost_python {
       boost::python::extract<double>(obj.get("sample_to_source_distance", 0.)),
       boost::python::extract<vec2<double> >(
         obj.get("wavelength_range", vec2<double>(0, 0))));
+    if (obj.has_key("peak_wavelength")) {
+      b->set_peak_wavelength(boost::python::extract<double>(obj["peak_wavelength"]));
+    }
     return b;
   }
 
@@ -572,6 +588,9 @@ namespace dxtbx { namespace model { namespace boost_python {
                              arg("wavelength_range") = vec2<double>(0, 0))))
       .def("get_wavelength_range", &PolychromaticBeam::get_wavelength_range)
       .def("set_wavelength_range", &PolychromaticBeam::set_wavelength_range)
+      .def("get_peak_wavelength", &PolychromaticBeam::get_peak_wavelength)
+      .def("set_peak_wavelength", &PolychromaticBeam::set_peak_wavelength)
+      .def("has_peak_wavelength", &PolychromaticBeam::has_peak_wavelength)
       .def("__str__", &PolychromaticBeam_to_string)
       .def("to_dict", &to_dict<PolychromaticBeam>)
       .def("from_dict",

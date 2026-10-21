@@ -14,6 +14,7 @@
 #include <iostream>
 #include <cmath>
 #include <string>
+#include <boost/optional.hpp>
 #include <scitbx/vec3.h>
 #include <scitbx/vec2.h>
 #include <scitbx/array_family/shared.h>
@@ -737,6 +738,34 @@ namespace dxtbx { namespace model {
       wavelength_range_ = wavelength_range;
     }
 
+    /**
+     * The wavelength of maximum intensity in the incident spectrum. This is
+     * not generally the midpoint of the wavelength range, since polychromatic
+     * spectra are not usually symmetric about their range. Downstream
+     * programs (e.g. Laue indexers) that need a single representative
+     * wavelength should prefer this over the wavelength range midpoint.
+     *
+     * If no peak wavelength has been explicitly set (e.g. for beams
+     * constructed or deserialized before this attribute existed), falls back
+     * to the midpoint of the wavelength range for backwards compatibility.
+     */
+    double get_peak_wavelength() const {
+      if (peak_wavelength_) {
+        return *peak_wavelength_;
+      }
+      return (wavelength_range_[0] + wavelength_range_[1]) / 2.0;
+    }
+
+    void set_peak_wavelength(double peak_wavelength) {
+      peak_wavelength_ = peak_wavelength;
+    }
+
+    /** Whether a peak wavelength has been explicitly set, as opposed to
+     * get_peak_wavelength() falling back to the wavelength range midpoint. */
+    bool has_peak_wavelength() const {
+      return static_cast<bool>(peak_wavelength_);
+    }
+
     vec3<double> get_s0() const {
       throw DXTBX_ERROR("PolychromaticBeam has no fixed s0");
       return vec3<double>(0., 0., 0.);
@@ -855,6 +884,10 @@ namespace dxtbx { namespace model {
 
   protected:
     vec2<double> wavelength_range_;
+    // Deliberately excluded from operator== / is_similar_to: this is
+    // descriptive metadata about the spectrum, not part of the geometric
+    // beam model that those comparisons are used to deduplicate.
+    boost::optional<double> peak_wavelength_;
   };
 
   /** Print beam information */
@@ -873,6 +906,8 @@ namespace dxtbx { namespace model {
     os << "    sample to source distance : " << b.get_sample_to_source_distance()
        << "\n";
     os << "    wavelength range : " << b.get_wavelength_range() << "\n";
+    os << "    peak wavelength : " << b.get_peak_wavelength()
+       << (b.has_peak_wavelength() ? "" : " (derived from range midpoint)") << "\n";
     return os;
   }
 }}  // namespace dxtbx::model

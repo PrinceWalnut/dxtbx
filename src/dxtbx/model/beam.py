@@ -73,6 +73,11 @@ beam_phil_scope = libtbx.phil.parse(
     wavelength_range = None
         .type = floats(size=2)
         .help = "Override the wavelength range for polychromatic beams (A)"
+
+    peak_wavelength = None
+        .type = float
+        .help = "Override the wavelength of maximum intensity in the incident "
+                "spectrum, for polychromatic beams (A)"
   }
 """
 )
@@ -130,6 +135,8 @@ class BeamFactory:
         if params.beam.type == "polychromatic":
             if params.beam.wavelength_range is not None:
                 beam.set_wavelength_range(params.beam.wavelength_range)
+            if params.beam.peak_wavelength is not None:
+                beam.set_peak_wavelength(params.beam.peak_wavelength)
         return beam
 
     @staticmethod
@@ -201,8 +208,9 @@ class BeamFactory:
         sample_to_source_distance: float = 0.0,
         deg: bool = True,
         wavelength_range: tuple[float, float] = (0.0, 0.0),
+        peak_wavelength: float | None = None,
     ) -> PolychromaticBeam:
-        return PolychromaticBeam(
+        beam = PolychromaticBeam(
             tuple(map(float, direction)),
             float(divergence),
             float(sigma_divergence),
@@ -215,6 +223,9 @@ class BeamFactory:
             bool(deg),
             tuple(map(float, wavelength_range)),
         )
+        if peak_wavelength is not None:
+            beam.set_peak_wavelength(float(peak_wavelength))
+        return beam
 
     @staticmethod
     def make_polarized_beam(
