@@ -1,0 +1,1 @@
+Loading an experiment list now reads each mask, gain, pedestal or offset map file once, and shares it between the imagesets that use it, instead of keeping a separate copy for every imageset. This greatly reduces memory use for stills that share a mask.

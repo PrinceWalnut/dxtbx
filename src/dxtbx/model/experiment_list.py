@@ -205,6 +205,9 @@ class ExperimentListDict:
         self._obj = copy.deepcopy(obj)
         self._check_format = check_format
         self._directory = directory
+        # Lookup data (mask, gain, ...) loaded by filename, shared between the
+        # imagesets that use the same file
+        self._lookup_data = {}
 
         # If this doesn't claim to be an ExperimentList, don't even try
         if self._obj.get("__id__") != "ExperimentList":
@@ -297,23 +300,25 @@ class ExperimentListDict:
         Returns:
             A tuple of (filename, data) where data has been loaded from
             the pickle file, or is None if the file is inaccessible. If there
-            is no key entry then ("", None) is returned.
+            is no key entry then ("", None) is returned. Each file is only
+            loaded once, and the data is shared between all callers.
         """
         if param not in imageset_data:
             return "", None
 
         filename = resolve_path(imageset_data[param], directory=self._directory)
-        data = None
-        if filename:
+        if not filename:
+            return "", None
+        if filename not in self._lookup_data:
+            data = None
             try:
                 with open(filename, "rb") as fh:
                     data = pickle.load(fh, encoding="bytes")
             except OSError:
                 pass
-        else:
-            filename = ""
+            self._lookup_data[filename] = data
 
-        return filename, data
+        return filename, self._lookup_data[filename]
 
     def _imageset_from_imageset_data(self, imageset_data, models):
         """Make an imageset from imageset_data - help with refactor decode."""
@@ -389,7 +394,8 @@ class ExperimentListDict:
 
             if not imageset.external_lookup.mask.data.empty():
                 if not mask.empty():
-                    mask = tuple(m.data() for m in mask)
+                    # Copy, as the loaded mask may be shared with other imagesets
+                    mask = tuple(m.data().deep_copy() for m in mask)
                     for m1, m2 in zip(mask, imageset.external_lookup.mask.data):
                         m1 &= m2.data()
                     imageset.external_lookup.mask.data = ImageBool(mask)

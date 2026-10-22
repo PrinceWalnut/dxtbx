@@ -619,6 +619,41 @@ def test_experimentlist_dumper_dump_empty_sequence(tmp_path):
     check(experiments, experiments2)
 
 
+def test_experimentlist_shared_lookup_file_loaded_once(tmp_path):
+    # Three stills imagesets, all using the same mask file
+    experiments = ExperimentList()
+    for i in range(3):
+        imageset = Format.get_imageset(
+            [tmp_path / f"image_{i}.cbf"],
+            beam=Beam((1, 0, 0)),
+            detector=Detector(),
+            as_imageset=True,
+        )
+        experiments.append(Experiment(imageset=imageset))
+    mask_file = tmp_path / "mask.pickle"
+    with mask_file.open("wb") as fh:
+        pickle.dump((flex.bool(flex.grid(4, 5), True),), fh)
+    experiments_dict = experiments.to_dict()
+    for imageset_dict in experiments_dict["imageset"]:
+        imageset_dict["mask"] = str(mask_file)
+
+    with mock.patch.object(
+        dxtbx.model.experiment_list.pickle, "load", wraps=pickle.load
+    ) as pickle_load:
+        experiments = ExperimentListDict(experiments_dict, check_format=False).decode()
+    assert pickle_load.call_count == 1
+
+    masks = [
+        iset.external_lookup.mask.data.tile(0).data()
+        for iset in experiments.imagesets()
+    ]
+    assert len(masks) == 3
+    assert all(m.all_eq(True) for m in masks)
+    # The imagesets share one copy of the mask
+    masks[0][0] = False
+    assert all(not m[0] for m in masks)
+
+
 def test_experimentlist_dumper_dump_with_lookup(dials_data, tmp_path):
     data_dir = dials_data("centroid_test_data")
 
